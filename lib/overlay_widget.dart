@@ -19,6 +19,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
   StreamSubscription<dynamic>? _overlaySub;
   Timer? _tickTimer;
   Timer? _hintTimer;
+  Timer? _endSessionSafetyTimer;
   String? _hint;
 
   @override
@@ -44,6 +45,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
     _overlaySub?.cancel();
     _tickTimer?.cancel();
     _hintTimer?.cancel();
+    _endSessionSafetyTimer?.cancel();
     super.dispose();
   }
 
@@ -110,8 +112,12 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
           nextPrefs.overlayHeight,
           true,
         );
+        break;
       case 'close':
+        _endSessionSafetyTimer?.cancel();
+        _endSessionSafetyTimer = null;
         await FlutterOverlayWindow.closeOverlay();
+        break;
       default:
         break;
     }
@@ -174,8 +180,8 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
       _session = null;
     });
 
-    // 3 seconds maximum wait time for the app to acknowledge or for the OS to send the data
-    final safetyTimer = Timer(const Duration(seconds: 3), () async {
+    _endSessionSafetyTimer?.cancel();
+    _endSessionSafetyTimer = Timer(const Duration(seconds: 8), () async {
       debugPrint('[Overlay] Safety fallback: Force closing overlay now');
       await FlutterOverlayWindow.closeOverlay();
     });
@@ -188,24 +194,22 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
           'run': sessionData,
           'endedAtMs': DateTime.now().millisecondsSinceEpoch,
         },
-      ).timeout(const Duration(milliseconds: 1500));
+        swallowError: false,
+      ).timeout(const Duration(seconds: 3));
       
       debugPrint('[Overlay] Finished message sent successfully');
-      // A small extra delay to ensure the platform channel has dispatched the data
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      debugPrint('[Overlay] Waiting for app close acknowledgement...');
     } catch (e) {
       debugPrint('[Overlay] Error or timeout sending finished message: $e');
-    } finally {
-      safetyTimer.cancel();
-      debugPrint('[Overlay] Finalizing end session, closing overlay');
-      await FlutterOverlayWindow.closeOverlay();
     }
   }
 
   Future<void> _sendMessage(
     String type, [
     Map<String, dynamic> payload = const <String, dynamic>{},
-  ]) async {
+  ], {
+    bool swallowError = true,
+  }) async {
     try {
       await FlutterOverlayWindow.shareData(<String, dynamic>{
         'source': 'overlay',
@@ -214,6 +218,9 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
       });
     } catch (e) {
       debugPrint('[Overlay] Error sending message $type: $e');
+      if (!swallowError) {
+        rethrow;
+      }
     }
   }
 
