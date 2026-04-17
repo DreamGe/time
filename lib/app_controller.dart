@@ -405,6 +405,7 @@ class AppController extends ChangeNotifier {
       ]);
 
       debugPrint('[AppController] Session finished and SAVED. Pending settlement ready.');
+      await _sendCloseToOverlay();
       await _bringAppToFront();
       _safeNotify();
     } catch (e, stack) {
@@ -437,6 +438,17 @@ class AppController extends ChangeNotifier {
       'type': 'settings',
       'settings': _overlayPreferences.toJson(),
     });
+  }
+
+  Future<void> _sendCloseToOverlay() async {
+    try {
+      await FlutterOverlayWindow.shareData(<String, dynamic>{
+        'source': 'app',
+        'type': 'close',
+      });
+    } catch (e) {
+      debugPrint('[AppController] Error sending close to overlay: $e');
+    }
   }
 
   void _safeNotify() {

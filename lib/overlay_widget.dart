@@ -13,12 +13,19 @@ class FloatingTimerWidget extends StatefulWidget {
 }
 
 class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
+  // Give app-side listener and SharedPreferences writes enough time to finish
+  // before forcing overlay shutdown on slower/background-throttled devices.
+  static const Duration _finishedSendTimeout = Duration(seconds: 3);
+  static const Duration _endSessionCloseFallbackTimeout = Duration(seconds: 8);
+  static const Duration _safetyCloseRetryDelay = Duration(seconds: 1);
+
   ActiveSession? _session;
   OverlayPreferences _preferences = OverlayPreferences.defaults;
 
   StreamSubscription<dynamic>? _overlaySub;
   Timer? _tickTimer;
   Timer? _hintTimer;
+  Timer? _endSessionSafetyTimer;
   String? _hint;
 
   @override
@@ -44,6 +51,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
     _overlaySub?.cancel();
     _tickTimer?.cancel();
     _hintTimer?.cancel();
+    _endSessionSafetyTimer?.cancel();
     super.dispose();
   }
 
@@ -110,8 +118,12 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
           nextPrefs.overlayHeight,
           true,
         );
+        break;
       case 'close':
+        _endSessionSafetyTimer?.cancel();
+        _endSessionSafetyTimer = null;
         await FlutterOverlayWindow.closeOverlay();
+        break;
       default:
         break;
     }
@@ -174,10 +186,27 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
       _session = null;
     });
 
-    // 3 seconds maximum wait time for the app to acknowledge or for the OS to send the data
-    final safetyTimer = Timer(const Duration(seconds: 3), () async {
-      debugPrint('[Overlay] Safety fallback: Force closing overlay now');
-      await FlutterOverlayWindow.closeOverlay();
+    _endSessionSafetyTimer?.cancel();
+    _endSessionSafetyTimer = Timer(_endSessionCloseFallbackTimeout, () {
+      debugPrint(
+        '[Overlay] Safety fallback after $_endSessionCloseFallbackTimeout: force closing overlay now',
+      );
+      unawaited(
+        FlutterOverlayWindow.closeOverlay().catchError((Object e) {
+          debugPrint('[Overlay] Error closing overlay in safety fallback: $e');
+          unawaited(
+            Future<void>.delayed(_safetyCloseRetryDelay).then((_) async {
+              try {
+                await FlutterOverlayWindow.closeOverlay();
+              } catch (retryError) {
+                debugPrint(
+                  '[Overlay] Retry close failed after safety fallback: $retryError',
+                );
+              }
+            }),
+          );
+        }),
+      );
     });
 
     try {
@@ -188,24 +217,27 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
           'run': sessionData,
           'endedAtMs': DateTime.now().millisecondsSinceEpoch,
         },
-      ).timeout(const Duration(milliseconds: 1500));
+        throwOnError: true,
+      ).timeout(
+        _finishedSendTimeout,
+        onTimeout: () => throw TimeoutException(
+          'Overlay finished message dispatching timed out after ${_finishedSendTimeout.inSeconds}s',
+        ),
+      );
       
       debugPrint('[Overlay] Finished message sent successfully');
-      // A small extra delay to ensure the platform channel has dispatched the data
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      debugPrint('[Overlay] Waiting for app close acknowledgement...');
     } catch (e) {
       debugPrint('[Overlay] Error or timeout sending finished message: $e');
-    } finally {
-      safetyTimer.cancel();
-      debugPrint('[Overlay] Finalizing end session, closing overlay');
-      await FlutterOverlayWindow.closeOverlay();
     }
   }
 
   Future<void> _sendMessage(
     String type, [
     Map<String, dynamic> payload = const <String, dynamic>{},
-  ]) async {
+  ], {
+    bool throwOnError = false,
+  }) async {
     try {
       await FlutterOverlayWindow.shareData(<String, dynamic>{
         'source': 'overlay',
@@ -214,6 +246,9 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
       });
     } catch (e) {
       debugPrint('[Overlay] Error sending message $type: $e');
+      if (throwOnError) {
+        rethrow;
+      }
     }
   }
 
