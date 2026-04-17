@@ -186,9 +186,13 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
     });
 
     _endSessionSafetyTimer?.cancel();
-    _endSessionSafetyTimer = Timer(_endSessionCloseFallbackTimeout, () async {
+    _endSessionSafetyTimer = Timer(_endSessionCloseFallbackTimeout, () {
       debugPrint('[Overlay] Safety fallback: Force closing overlay now');
-      await FlutterOverlayWindow.closeOverlay();
+      unawaited(
+        FlutterOverlayWindow.closeOverlay().catchError((Object e) {
+          debugPrint('[Overlay] Error closing overlay in safety fallback: $e');
+        }),
+      );
     });
 
     try {
@@ -199,7 +203,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
           'run': sessionData,
           'endedAtMs': DateTime.now().millisecondsSinceEpoch,
         },
-        swallowError: false,
+        throwOnError: true,
       ).timeout(_finishedSendTimeout);
       
       debugPrint('[Overlay] Finished message sent successfully');
@@ -213,7 +217,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
     String type, [
     Map<String, dynamic> payload = const <String, dynamic>{},
   ], {
-    bool swallowError = true,
+    bool throwOnError = false,
   }) async {
     try {
       await FlutterOverlayWindow.shareData(<String, dynamic>{
@@ -223,7 +227,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
       });
     } catch (e) {
       debugPrint('[Overlay] Error sending message $type: $e');
-      if (!swallowError) {
+      if (throwOnError) {
         rethrow;
       }
     }
