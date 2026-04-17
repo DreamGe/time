@@ -187,7 +187,9 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
 
     _endSessionSafetyTimer?.cancel();
     _endSessionSafetyTimer = Timer(_endSessionCloseFallbackTimeout, () {
-      debugPrint('[Overlay] Safety fallback: Force closing overlay now');
+      debugPrint(
+        '[Overlay] Safety fallback after $_endSessionCloseFallbackTimeout: force closing overlay now',
+      );
       unawaited(
         FlutterOverlayWindow.closeOverlay().catchError((Object e) {
           debugPrint('[Overlay] Error closing overlay in safety fallback: $e');
@@ -204,7 +206,12 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
           'endedAtMs': DateTime.now().millisecondsSinceEpoch,
         },
         throwOnError: true,
-      ).timeout(_finishedSendTimeout);
+      ).timeout(
+        _finishedSendTimeout,
+        onTimeout: () => throw TimeoutException(
+          'Overlay finished message dispatch timed out after $_finishedSendTimeout',
+        ),
+      );
       
       debugPrint('[Overlay] Finished message sent successfully');
       debugPrint('[Overlay] Waiting for app close acknowledgement...');
