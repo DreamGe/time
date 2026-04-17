@@ -193,6 +193,17 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
       unawaited(
         FlutterOverlayWindow.closeOverlay().catchError((Object e) {
           debugPrint('[Overlay] Error closing overlay in safety fallback: $e');
+          unawaited(
+            Future<void>.delayed(const Duration(seconds: 1)).then((_) async {
+              try {
+                await FlutterOverlayWindow.closeOverlay();
+              } catch (retryError) {
+                debugPrint(
+                  '[Overlay] Retry close failed after safety fallback: $retryError',
+                );
+              }
+            }),
+          );
         }),
       );
     });
@@ -209,7 +220,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
       ).timeout(
         _finishedSendTimeout,
         onTimeout: () => throw TimeoutException(
-          'Overlay finished message dispatch timed out after $_finishedSendTimeout',
+          'Overlay finished message dispatch timed out after ${_finishedSendTimeout.inSeconds}s',
         ),
       );
       
