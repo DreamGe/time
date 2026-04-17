@@ -17,6 +17,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
   // before forcing overlay shutdown on slower/background-throttled devices.
   static const Duration _finishedSendTimeout = Duration(seconds: 3);
   static const Duration _endSessionCloseFallbackTimeout = Duration(seconds: 8);
+  static const Duration _safetyCloseRetryDelay = Duration(seconds: 1);
 
   ActiveSession? _session;
   OverlayPreferences _preferences = OverlayPreferences.defaults;
@@ -194,7 +195,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
         FlutterOverlayWindow.closeOverlay().catchError((Object e) {
           debugPrint('[Overlay] Error closing overlay in safety fallback: $e');
           unawaited(
-            Future<void>.delayed(const Duration(seconds: 1)).then((_) async {
+            Future<void>.delayed(_safetyCloseRetryDelay).then((_) async {
               try {
                 await FlutterOverlayWindow.closeOverlay();
               } catch (retryError) {
@@ -220,7 +221,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
       ).timeout(
         _finishedSendTimeout,
         onTimeout: () => throw TimeoutException(
-          'Overlay finished message dispatch timed out after ${_finishedSendTimeout.inSeconds}s',
+          'Overlay finished message dispatching timed out after ${_finishedSendTimeout.inSeconds}s',
         ),
       );
       
