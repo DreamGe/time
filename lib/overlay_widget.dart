@@ -13,6 +13,11 @@ class FloatingTimerWidget extends StatefulWidget {
 }
 
 class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
+  // Give app-side listener and SharedPreferences writes enough time to finish
+  // before forcing overlay shutdown on slower/background-throttled devices.
+  static const Duration _finishedSendTimeout = Duration(seconds: 3);
+  static const Duration _endSessionCloseFallbackTimeout = Duration(seconds: 8);
+
   ActiveSession? _session;
   OverlayPreferences _preferences = OverlayPreferences.defaults;
 
@@ -181,7 +186,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
     });
 
     _endSessionSafetyTimer?.cancel();
-    _endSessionSafetyTimer = Timer(const Duration(seconds: 8), () async {
+    _endSessionSafetyTimer = Timer(_endSessionCloseFallbackTimeout, () async {
       debugPrint('[Overlay] Safety fallback: Force closing overlay now');
       await FlutterOverlayWindow.closeOverlay();
     });
@@ -195,7 +200,7 @@ class _FloatingTimerWidgetState extends State<FloatingTimerWidget> {
           'endedAtMs': DateTime.now().millisecondsSinceEpoch,
         },
         swallowError: false,
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(_finishedSendTimeout);
       
       debugPrint('[Overlay] Finished message sent successfully');
       debugPrint('[Overlay] Waiting for app close acknowledgement...');
